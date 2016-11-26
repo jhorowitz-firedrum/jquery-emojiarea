@@ -1,14 +1,14 @@
-/** 
+/**
  * emojiarea - A rich textarea control that supports emojis, WYSIWYG-style.
  * Copyright (c) 2012 DIY Co
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this 
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this
  * file except in compliance with the License. You may obtain a copy of the License at:
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under 
- * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF 
- * ANY KIND, either express or implied. See the License for the specific language 
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
+ * ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  *
  * @author Brian Reavis <brian@diy.org>
@@ -18,10 +18,14 @@
 
 	var ELEMENT_NODE = 1;
 	var TEXT_NODE = 3;
-	var TAGS_BLOCK = ['p', 'div', 'pre', 'form'];
+	var TAGS_BLOCK = [ 'p', 'div', 'pre', 'form' ];
 	var KEY_ESC = 27;
 	var KEY_TAB = 9;
-
+	/* Keys that are not intercepted and canceled when the textbox has reached its max length:
+	 	   Backspace, Tab, Ctrl, Alt, Left Arrow, Up Arrow, Right Arrow, Down Arrow, Cmd Key, Delete
+	*/
+	var MAX_LENGTH_ALLOWED_KEYS = [8, 9, 17, 18, 37, 38, 39, 40, 91, 46];
+	
 	// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 	$.emojiarea = {
@@ -31,19 +35,32 @@
 			button: null,
 			buttonLabel: 'Emojis',
 			buttonPosition: 'after'
-		}
+		},
+		assetsPath : '',
+		iconSize : 25
 	};
+	var defaultRecentEmojis = ':joy:,:kissing_heart:,:heart:,:heart_eyes:,:blush:,:grin:,:+1:,:relaxed:,:pensive:,:smile:,:sob:,:kiss:,:unamused:,:flushed:,:stuck_out_tongue_winking_eye:,:see_no_evil:,:wink:,:smiley:,:cry:,:stuck_out_tongue_closed_eyes:,:scream:,:rage:,:smirk:,:disappointed:,:sweat_smile:,:kissing_closed_eyes:,:speak_no_evil:,:relieved:,:grinning:,:yum:,:laughing:,:ok_hand:,:neutral_face:,:confused:'
+		.split(',');
 
 	$.fn.emojiarea = function(options) {
 		options = $.extend({}, $.emojiarea.defaults, options);
-		return this.each(function() {
-			var $textarea = $(this);
-			if ('contentEditable' in document.body && options.wysiwyg !== false) {
-				new EmojiArea_WYSIWYG($textarea, options);
-			} else {
-				new EmojiArea_Plain($textarea, options);
-			}
-		});
+		return this
+			.each(function () {
+				var originalInput = $(this);
+				if ('contentEditable' in document.body
+					&& options.wysiwyg !== false) {
+					var id = getGuid();
+					new EmojiArea_WYSIWYG(originalInput, id, $.extend({}, options));
+				} else {
+					var id = getGuid();
+					new EmojiArea_Plain(originalInput, id, options);
+				}
+				originalInput.attr( {
+					'data-emojiable': 'converted',
+					'data-id': id,
+					'data-type': 'original-input'
+				} );
+			} );
 	};
 
 	// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -82,7 +99,9 @@
 		} else if (document.selection && document.selection.createRange) {
 			return function() {
 				var sel = document.selection;
-				return (sel.type.toLowerCase() !== 'none') ? sel.createRange() : null;
+				return (sel.type.toLowerCase() !== 'none') ?
+					sel.createRange() :
+					null;
 			};
 		}
 	})();
@@ -91,14 +110,14 @@
 		if (window.getSelection) {
 			return function(content) {
 				var range, sel = window.getSelection();
-				var node = typeof content === 'string' ? document.createTextNode(content) : content;
+				var node = typeof content === 'string' ? document
+						.createTextNode(content) : content;
 				if (sel.getRangeAt && sel.rangeCount) {
 					range = sel.getRangeAt(0);
 					range.deleteContents();
-					range.insertNode(document.createTextNode(' '));
 					range.insertNode(node);
 					range.setStart(node, 0);
-					
+
 					window.setTimeout(function() {
 						range = document.createRange();
 						range.setStartAfter(node);
@@ -123,12 +142,15 @@
 	util.insertAtCursor = function(text, el) {
 		text = ' ' + text;
 		var val = el.value, endIndex, startIndex, range;
-		if (typeof el.selectionStart != 'undefined' && typeof el.selectionEnd != 'undefined') {
+		if (typeof el.selectionStart != 'undefined'
+				&& typeof el.selectionEnd != 'undefined') {
 			startIndex = el.selectionStart;
 			endIndex = el.selectionEnd;
-			el.value = val.substring(0, startIndex) + text + val.substring(el.selectionEnd);
+			el.value = val.substring(0, startIndex) + text
+					+ val.substring(el.selectionEnd);
 			el.selectionStart = el.selectionEnd = startIndex + text.length;
-		} else if (typeof document.selection != 'undefined' && typeof document.selection.createRange != 'undefined') {
+		} else if (typeof document.selection != 'undefined'
+				&& typeof document.selection.createRange != 'undefined') {
 			el.focus();
 			range = document.selection.createRange();
 			range.text = text;
@@ -137,9 +159,11 @@
 	};
 
 	util.extend = function(a, b) {
-		if (typeof a === 'undefined' || !a) { a = {}; }
+		if (typeof a === 'undefined' || !a) {
+			a = {};
+		}
 		if (typeof b === 'object') {
-			for (var key in b) {
+			for ( var key in b) {
 				if (b.hasOwnProperty(key)) {
 					a[key] = b[key];
 				}
@@ -153,7 +177,30 @@
 	};
 
 	util.htmlEntities = function(str) {
-		return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+		return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+	};
+
+	util.emojiInserted = function(emojiKey, menu) {
+		ConfigStorage.get('emojis_recent', function(curEmojis) {
+			curEmojis = curEmojis || defaultRecentEmojis || [];
+
+			var pos = curEmojis.indexOf(emojiKey);
+			if (!pos) {
+				return false;
+			}
+			if (pos != -1) {
+				curEmojis.splice(pos, 1);
+			}
+			curEmojis.unshift(emojiKey);
+			if (curEmojis.length > 42) {
+				curEmojis = curEmojis.slice(42);
+			}
+
+			ConfigStorage.set({
+				emojis_recent : curEmojis
+			});
+		})
 	};
 
 	// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -162,70 +209,85 @@
 
 	EmojiArea.prototype.setup = function() {
 		var self = this;
-		
-		this.$editor.on('focus', function() { self.hasFocus = true; });
-		this.$editor.on('blur', function() { self.hasFocus = false; });
-		
+
+		this.$editor.on('focus', function() {
+			self.hasFocus = true;
+		});
+		this.$editor.on('blur', function() {
+			self.hasFocus = false;
+		});
+
+		// Assign a unique instance of an emojiMenu too
+		self.emojiMenu = new EmojiMenu(self);
+
 		this.setupButton();
 	};
 
 	EmojiArea.prototype.setupButton = function() {
 		var self = this;
-		var $button;
-
-		if (this.options.button) {
-			$button = $(this.options.button);
-		} else if (this.options.button !== false) {
-			$button = $('<a href="javascript:void(0)">');
-			$button.html(this.options.buttonLabel);
-			$button.addClass('emoji-button');
-			$button.attr({title: this.options.buttonLabel});
-			this.$editor[this.options.buttonPosition]($button);
-		} else {
-			$button = $('');
-		}
+		var $button = $('[data-id=' + this.id + '][data-type=picker]');
 
 		$button.on('click', function(e) {
-			EmojiMenu.show(self);
-			e.stopPropagation();
+			self.emojiMenu.show(self);
 		});
-		
 		this.$button = $button;
+		this.$dontHideOnClick = 'emoji-picker';
 	};
 
-	EmojiArea.createIcon = function(emoji) {
-		var filename = $.emojiarea.icons[emoji];
-		var path = $.emojiarea.path || '';
-		if (path.length && path.charAt(path.length - 1) !== '/') {
-			path += '/';
-		}
-		return '<img src="' + path + filename + '" alt="' + util.htmlEntities(emoji) + '">';
+	EmojiArea.createIcon = function(emoji, menu) {
+		var category = emoji[0];
+		var row = emoji[1];
+		var column = emoji[2];
+		var name = emoji[3];
+		var filename = $.emojiarea.assetsPath + '/emoji_spritesheet_!.png';
+		var blankGifPath = $.emojiarea.assetsPath + '/blank.gif';
+		var iconSize = menu && Config.Mobile ? 26 : $.emojiarea.iconSize
+		var xoffset = -(iconSize * column);
+		var yoffset = -(iconSize * row);
+		var scaledWidth = (Config.EmojiCategorySpritesheetDimens[category][1] * iconSize);
+		var scaledHeight = (Config.EmojiCategorySpritesheetDimens[category][0] * iconSize);
+
+		var style = 'display:inline-block;';
+		style += 'width:' + iconSize + 'px;';
+		style += 'height:' + iconSize + 'px;';
+		style += 'background:url(\'' + filename.replace('!', category) + '\') '
+				+ xoffset + 'px ' + yoffset + 'px no-repeat;';
+		style += 'background-size:' + scaledWidth + 'px ' + scaledHeight
+				+ 'px;';
+		return '<img src="' + blankGifPath + '" class="img" style="'
+				+ style + '" alt="' + util.htmlEntities(name) + '">';
 	};
+
+	$.emojiarea.createIcon = EmojiArea.createIcon;
 
 	// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
 	/**
 	 * Editor (plain-text)
 	 * 
 	 * @constructor
 	 * @param {object} $textarea
+	 * @param {string} id
 	 * @param {object} options
 	 */
 
-	var EmojiArea_Plain = function($textarea, options) {
+	var EmojiArea_Plain = function($textarea, id, options) {
 		this.options = options;
 		this.$textarea = $textarea;
 		this.$editor = $textarea;
+		this.id = id;
 		this.setup();
 	};
 
 	EmojiArea_Plain.prototype.insert = function(emoji) {
-		if (!$.emojiarea.icons.hasOwnProperty(emoji)) return;
+		if (!$.emojiarea.icons.hasOwnProperty(emoji))
+			return;
 		util.insertAtCursor(emoji, this.$textarea[0]);
+		util.emojiInserted(emoji, this.menu);
 		this.$textarea.trigger('change');
 	};
 
 	EmojiArea_Plain.prototype.val = function() {
+		if (this.$textarea == '\n') return '';
 		return this.$textarea.val();
 	};
 
@@ -238,63 +300,144 @@
 	 * 
 	 * @constructor
 	 * @param {object} $textarea
+	 * @param {string} id
 	 * @param {object} options
 	 */
 
-	var EmojiArea_WYSIWYG = function($textarea, options) {
+	var EmojiArea_WYSIWYG = function($textarea, id, options) {
 		var self = this;
 
-		this.options = options;
+		this.options = options || {};
+		if ($($textarea).attr('data-emoji-input') === 'unicode')
+			this.options.inputMethod = 'unicode';
+		else
+			this.options.inputMethod = 'image';
+		this.id = id;
 		this.$textarea = $textarea;
-		this.$editor = $('<div>').addClass('emoji-wysiwyg-editor');
-		this.$editor.text($textarea.val());
-		this.$editor.attr({contenteditable: 'true'});
-		this.$editor.on('blur keyup paste', function() { return self.onChange.apply(self, arguments); });
-		this.$editor.on('mousedown focus', function() { document.execCommand('enableObjectResizing', false, false); });
-		this.$editor.on('blur', function() { document.execCommand('enableObjectResizing', true, true); });
+		this.emojiPopup = options.emojiPopup;
+		this.$editor = $('<div>').addClass('emoji-wysiwyg-editor').addClass($($textarea)[0].className);
+		this.$editor.data('self', this);
 
-		var html = this.$editor.text();
-		var emojis = $.emojiarea.icons;
-		for (var key in emojis) {
-			if (emojis.hasOwnProperty(key)) {
-				html = html.replace(new RegExp(util.escapeRegex(key), 'g'), EmojiArea.createIcon(key));
-			}
+		if ($textarea.attr('maxlength')) {
+			this.$editor.attr('maxlength', $textarea.attr('maxlength'));
 		}
-		this.$editor.html(html);
+		var unicodeToImageText = this.emojiPopup.unicodeToImage($textarea.val());
+		this.$editor.html(unicodeToImageText);
+		this.$editor.attr({
+			'data-id': id,
+			'data-type': 'input',
+			'placeholder': $textarea.attr('placeholder'),
+			'contenteditable': 'true',
+		});
+
+		var changeEvents = 'blur change';
+		if (!this.options.norealTime) {
+			changeEvents += ' keyup';
+		}
+		this.$editor.on(changeEvents, function(e) {
+			return self.onChange.apply(self, [ e ]);
+		});
+
+		this.$editor.on('mousedown focus', function() {
+			document.execCommand('enableObjectResizing', false, false);
+		});
+		this.$editor.on('blur', function() {
+			document.execCommand('enableObjectResizing', true, true);
+		});
+
+		var editorDiv = this.$editor;
+		this.$editor.on( "change keydown keyup resize scroll", function(e) {
+			if(MAX_LENGTH_ALLOWED_KEYS.indexOf(e.which) == -1 &&
+				!((e.ctrlKey || e.metaKey) && e.which == 65) && // Ctrl + A
+				!((e.ctrlKey || e.metaKey) && e.which == 67) && // Ctrl + C
+				editorDiv.text().length + editorDiv.find('img').length >= editorDiv.attr('maxlength'))
+			{
+				e.preventDefault();
+			}
+			self.updateBodyPadding(editorDiv);
+		} );
+
+		if (this.options.onPaste) {
+			var self = this;
+			this.$editor.on("paste", function (e) {
+				e.preventDefault();
+
+				if ((e.originalEvent || e).clipboardData) {
+					var content = (e.originalEvent || e).clipboardData.getData('text/plain');
+					var finalText = self.options.onPaste(content);
+					document.execCommand('insertText', false, finalText);
+				} else if (window.clipboardData) {
+					var content = window.clipboardData.getData('Text');
+					var finalText = self.options.onPaste(content);
+					document.selection.createRange().pasteHTML(finalText);
+				}
+				editorDiv.scrollTop(editorDiv[0].scrollHeight);
+			});
+		}
+
+		$textarea.after("<i class='emoji-picker-icon emoji-picker " + this.options.popupButtonClasses + "' data-id='" + id + "' data-type='picker'></i>");
 
 		$textarea.hide().after(this.$editor);
-
 		this.setup();
 
-		this.$button.on('mousedown', function() {
+		$(document.body).on('mousedown', function() {
 			if (self.hasFocus) {
 				self.selection = util.saveSelection();
 			}
 		});
 	};
 
-	EmojiArea_WYSIWYG.prototype.onChange = function() {
+	EmojiArea_WYSIWYG.prototype.updateBodyPadding = function(target) {
+		var emojiPicker = $('[data-id=' + this.id + '][data-type=picker]');
+		if ($(target).hasScrollbar()) {
+			if (!(emojiPicker.hasClass('parent-has-scroll')))
+				emojiPicker.addClass('parent-has-scroll');
+			if (!($(target).hasClass('parent-has-scroll')))
+				$(target).addClass('parent-has-scroll');
+		} else {
+			if ((emojiPicker.hasClass('parent-has-scroll')))
+				emojiPicker.removeClass('parent-has-scroll');
+			if (($(target).hasClass('parent-has-scroll')))
+				$(target).removeClass('parent-has-scroll');
+		}
+	};
+
+	EmojiArea_WYSIWYG.prototype.onChange = function(e) {
 		this.$textarea.val(this.val()).trigger('change');
 	};
 
 	EmojiArea_WYSIWYG.prototype.insert = function(emoji) {
 		var content;
-		var $img = $(EmojiArea.createIcon(emoji));
-		if ($img[0].attachEvent) {
-			$img[0].attachEvent('onresizestart', function(e) { e.returnValue = false; }, false);
+		var insertionContent = '';
+		if (this.options.inputMethod == 'unicode') {
+			insertionContent = this.emojiPopup.colonToUnicode(emoji);
+		} else {
+			var $img = $(EmojiArea.createIcon($.emojiarea.icons[emoji]));
+			if ($img[0].attachEvent) {
+				$img[0].attachEvent('onresizestart', function(e) {
+					e.returnValue = false;
+				}, false);
+			}
+			insertionContent = $img[0];
 		}
-		
+
 		this.$editor.trigger('focus');
 		if (this.selection) {
 			util.restoreSelection(this.selection);
 		}
-		try { util.replaceSelection($img[0]); } catch (e) {}
+		try {
+			util.replaceSelection(insertionContent);
+		} catch (e) {}
+
+		util.emojiInserted(emoji, this.menu);
+
 		this.onChange();
 	};
 
 	EmojiArea_WYSIWYG.prototype.val = function() {
 		var lines = [];
-		var line  = [];
+		var line = [];
+		var emojiPopup = this.emojiPopup;
 
 		var flush = function() {
 			lines.push(line.join(''));
@@ -312,7 +455,9 @@
 
 				if (tagName === 'img') {
 					var alt = node.getAttribute('alt') || '';
-					if (alt) line.push(alt);
+					if (alt) {
+						line.push(alt);
+					}
 					return;
 				} else if (tagName === 'br') {
 					flush();
@@ -320,7 +465,7 @@
 
 				var children = node.childNodes;
 				for (var i = 0; i < children.length; i++) {
-					sanitizeNode(children[i]);
+					 sanitizeNode(children[i]);
 				}
 
 				if (isBlock && line.length) flush();
@@ -334,32 +479,67 @@
 
 		if (line.length) flush();
 
-		return lines.join('\n');
+		var returnValue = lines.join('\n');
+		return emojiPopup.colonToUnicode(returnValue);
 	};
 
 	util.extend(EmojiArea_WYSIWYG.prototype, EmojiArea.prototype);
 
 	// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+	jQuery.fn.hasScrollbar = function() {
+		var scrollHeight = this.get(0).scrollHeight;
+
+		if (this.outerHeight() < scrollHeight)
+			return true;
+		else
+			return false;
+	};
+
 	/**
 	 * Emoji Dropdown Menu
-	 *
+	 * 
 	 * @constructor
 	 * @param {object} emojiarea
 	 */
-	var EmojiMenu = function() {
+	var EmojiMenu = function(emojiarea) {
 		var self = this;
+		self.id = emojiarea.id;
 		var $body = $(document.body);
 		var $window = $(window);
 
 		this.visible = false;
-		this.emojiarea = null;
+		this.emojiarea = emojiarea;
+		EmojiMenu.menuZIndex = 5000;
 		this.$menu = $('<div>');
 		this.$menu.addClass('emoji-menu');
+		this.$menu.attr('data-id', self.id);
+		this.$menu.attr('data-type', 'menu');
 		this.$menu.hide();
-		this.$items = $('<div>').appendTo(this.$menu);
+
+		this.$itemsTailWrap = $('<div class="emoji-items-wrap1"></div>')
+				.appendTo(this.$menu);
+		this.$categoryTabs = $(
+				'<table class="emoji-menu-tabs"><tr>'
+						+ '<td><a class="emoji-menu-tab icon-recent" ></a></td>'
+						+ '<td><a class="emoji-menu-tab icon-smile" ></a></td>'
+						+ '<td><a class="emoji-menu-tab icon-flower"></a></td>'
+						+ '<td><a class="emoji-menu-tab icon-bell"></a></td>'
+						+ '<td><a class="emoji-menu-tab icon-car"></a></td>'
+						+ '<td><a class="emoji-menu-tab icon-grid"></a></td>'
+						+ '</tr></table>').appendTo(this.$itemsTailWrap);
+		this.$itemsWrap = $(
+				'<div class="emoji-items-wrap nano mobile_scrollable_wrap"></div>')
+				.appendTo(this.$itemsTailWrap);
+		this.$items = $('<div class="emoji-items nano-content">').appendTo(
+				this.$itemsWrap);
 
 		$body.append(this.$menu);
+
+		
+		if (!Config.Mobile) {
+			this.$itemsWrap.nanoScroller({preventPageScrolling: true, tabIndex: -1});
+		}
 
 		$body.on('keydown', function(e) {
 			if (e.keyCode === KEY_ESC || e.keyCode === KEY_TAB) {
@@ -367,7 +547,25 @@
 			}
 		});
 
-		$body.on('mouseup', function() {
+		$body.on('message_send', function(e) {
+			self.hide();
+		});
+
+		$body.on('mouseup', function(e) {
+			e = e.originalEvent || e;
+			var target = e.originalTarget || e.target || window;
+
+			if ($(target).hasClass(self.emojiarea.$dontHideOnClick)) {
+				return;
+			}
+
+			while (target && target != window) {
+				target = target.parentNode;
+				if (target == self.$menu[0] || self.emojiarea
+						&& target == self.emojiarea.$button[0]) {
+					return;
+				}
+			}
 			self.hide();
 		});
 
@@ -381,78 +579,139 @@
 		});
 
 		this.$menu.on('click', 'a', function(e) {
+			self.emojiarea.updateBodyPadding(self.emojiarea.$editor);
+			if ($(this).hasClass('emoji-menu-tab')) {
+				if (self.getTabIndex(this) !== self.currentCategory) {
+					self.selectCategory(self.getTabIndex(this));
+				}
+				return false;
+			}
 			var emoji = $('.label', $(this)).text();
 			window.setTimeout(function() {
-				self.onItemSelected.apply(self, [emoji]);
+				self.onItemSelected(emoji);
+				if (e.ctrlKey || e.metaKey) {
+					self.hide();
+				}
 			}, 0);
 			e.stopPropagation();
 			return false;
 		});
 
-		this.load();
+		this.selectCategory(0);
+	};
+
+	EmojiMenu.prototype.getTabIndex = function(tab) {
+		return this.$categoryTabs.find('.emoji-menu-tab').index(tab);
+	};
+
+	EmojiMenu.prototype.selectCategory = function(category) {
+		var self = this;
+		this.$categoryTabs.find('.emoji-menu-tab').each(function(index) {
+			if (index === category) {
+				this.className += '-selected';
+			} else {
+				this.className = this.className.replace('-selected', '');
+			}
+		});
+		this.currentCategory = category;
+		this.load(category);
+
+		
+		 if (!Config.Mobile) { this.$itemsWrap.nanoScroller({ scroll: 'top'
+		 }); }
+		 
+		 
+		 
 	};
 
 	EmojiMenu.prototype.onItemSelected = function(emoji) {
+		if(this.emojiarea.$editor.text().length + this.emojiarea.$editor.find('img').length >= this.emojiarea.$editor.attr('maxlength')) {
+			return;
+		}
 		this.emojiarea.insert(emoji);
-		this.hide();
 	};
 
-	EmojiMenu.prototype.load = function() {
+	EmojiMenu.prototype.load = function(category) {
 		var html = [];
 		var options = $.emojiarea.icons;
-		var path = $.emojiarea.path;
+		var path = $.emojiarea.assetsPath;
+		var self = this;
 		if (path.length && path.charAt(path.length - 1) !== '/') {
 			path += '/';
 		}
 
-		for (var key in options) {
-			if (options.hasOwnProperty(key)) {
-				var filename = options[key];
-				html.push('<a href="javascript:void(0)" title="' + util.htmlEntities(key) + '">' + EmojiArea.createIcon(key) + '<span class="label">' + util.htmlEntities(key) + '</span></a>');
+		var updateItems = function() {
+			self.$items.html(html.join(''));
+
+			
+			if (!Config.Mobile) { setTimeout(function () {
+				self.$itemsWrap.nanoScroller(); }, 100);
 			}
 		}
 
-		this.$items.html(html.join(''));
+		if (category > 0) {
+			for ( var key in options) {
+				if (options.hasOwnProperty(key)
+						&& options[key][0] === (category - 1)) {
+					html.push('<a href="javascript:void(0)" title="'
+							+ util.htmlEntities(key) + '">'
+							+ EmojiArea.createIcon(options[key], true)
+							+ '<span class="label">' + util.htmlEntities(key)
+							+ '</span></a>');
+				}
+			}
+			updateItems();
+		} else {
+			ConfigStorage.get('emojis_recent', function(curEmojis) {
+				curEmojis = curEmojis || defaultRecentEmojis || [];
+				var key, i;
+				for (i = 0; i < curEmojis.length; i++) {
+					key = curEmojis[i]
+					if (options[key]) {
+						html.push('<a href="javascript:void(0)" title="'
+								+ util.htmlEntities(key) + '">'
+								+ EmojiArea.createIcon(options[key], true)
+								+ '<span class="label">'
+								+ util.htmlEntities(key) + '</span></a>');
+					}
+				}
+				updateItems();
+			});
+		}
 	};
 
 	EmojiMenu.prototype.reposition = function() {
-		var $button = this.emojiarea.$button;
-		var offset = $button.offset();
-		offset.top += $button.outerHeight();
-		offset.left += Math.round($button.outerWidth() / 2);
-		
-		this.$menu.css({
-			top: offset.top,
-			left: offset.left
-		});
+		if (!this.tether) {
+
+			this.tether = new Tether({
+				element: '[data-id="' + this.id + '"][data-type="menu"]',
+				target: '[data-id="' + this.id + '"][data-type="picker"]',
+				attachment: 'left center',
+				targetAttachment: 'bottom left',
+				offset: '0 12px',
+				constraints: [ {
+					to: 'html',
+					pin: true
+				} ]
+			});
+		}
 	};
 
 	EmojiMenu.prototype.hide = function(callback) {
-		if (this.emojiarea) {
-			this.emojiarea.menu = null;
-			this.emojiarea.$button.removeClass('on');
-			this.emojiarea = null;
-		}
 		this.visible = false;
-		this.$menu.hide();
+		this.$menu.hide("fast");
 	};
 
 	EmojiMenu.prototype.show = function(emojiarea) {
-		if (this.emojiarea && this.emojiarea === emojiarea) return;
-		this.emojiarea = emojiarea;
-		this.emojiarea.menu = this;
-
+		if (this.visible)
+			return this.hide();
 		this.reposition();
-		this.$menu.show();
+		$(this.$menu).css('z-index', ++EmojiMenu.menuZIndex);
+		this.$menu.show("fast");
+		if (!this.currentCategory) {
+			this.load(0);
+		}
 		this.visible = true;
 	};
-
-	EmojiMenu.show = (function() {
-		var menu = null;
-		return function(emojiarea) {
-			menu = menu || new EmojiMenu();
-			menu.show(emojiarea);
-		};
-	})();
 
 })(jQuery, window, document);
